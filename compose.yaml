@@ -1,0 +1,106 @@
+volumes:
+  jikan_mongo_data:
+  jikan_redis_data:
+  jikan_typesense_data:
+
+networks:
+  jikan-shared:
+    external: true
+
+services:
+  jikan_rest:
+    image: docker.io/jikanme/jikan-rest:latest
+    container_name: jikan_rest
+    hostname: jikan-rest-api
+    user: "10001:10001"
+    restart: unless-stopped
+    networks: [ jikan-shared ]
+    environment:
+      APP_DEBUG: "false"
+      LOG_LEVEL: info
+      APP_ENV: production
+      APP_URL: http://127.0.0.1:8080
+      CACHING: "true"
+      CACHE_DRIVER: redis
+      REDIS_HOST: jikan_redis
+      REDIS_PASSWORD: ${JIKAN_REDIS_PASSWORD}
+      DB_CONNECTION: mongodb
+      DB_HOST: jikan_mongo
+      DB_DATABASE: jikan
+      DB_USERNAME: ${JIKAN_DB_USERNAME}
+      DB_ADMIN: ${JIKAN_DB_USERNAME}
+      DB_PASSWORD: ${JIKAN_DB_PASSWORD}
+      SCOUT_DRIVER: typesense
+      SCOUT_QUEUE: "false"
+      TYPESENSE_HOST: jikan_typesense
+      TYPESENSE_PORT: 8108
+      TYPESENSE_API_KEY: ${JIKAN_TYPESENSE_API_KEY}
+      CORS_MIDDLEWARE: "true"
+      MICROCACHING: "true"
+      MICROCACHING_EXPIRE: 60
+      MAX_RESULTS_PER_PAGE: 50
+    volumes:
+      - ./RepositoryQuery.php:/app/app/Support/RepositoryQuery.php:ro
+    expose: [ "8080" ]
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q 'http://127.0.0.1:2114/health?plugin=http'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      jikan_mongo: { condition: service_healthy }
+      jikan_redis: { condition: service_healthy }
+      jikan_typesense: { condition: service_started }
+
+  jikan_mongo:
+    image: docker.io/mongo:focal
+    container_name: jikan_mongo
+    hostname: jikan_mongo
+    restart: unless-stopped
+    networks: [ jikan-shared ]
+    command: "--wiredTigerCacheSizeGB 0.5"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${JIKAN_DB_ADMIN_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${JIKAN_DB_ADMIN_PASSWORD}
+      MONGO_INITDB_DATABASE: jikan_admin
+      JIKAN_DB_USERNAME: ${JIKAN_DB_USERNAME}
+      JIKAN_DB_PASSWORD: ${JIKAN_DB_PASSWORD}
+    volumes:
+      - jikan_mongo_data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh mongodb://localhost:27017 --quiet --eval 'db.runCommand(\"ping\").ok'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  jikan_redis:
+    image: docker.io/redis:6-alpine
+    container_name: jikan_redis
+    hostname: jikan_redis
+    restart: unless-stopped
+    networks: [ jikan-shared ]
+    environment:
+      JIKAN_REDIS_PASSWORD: ${JIKAN_REDIS_PASSWORD}
+    command: ["/bin/sh", "-c", "redis-server --requirepass \"$$JIKAN_REDIS_PASSWORD\" --appendonly yes"]
+    volumes:
+      - jikan_redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$JIKAN_REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  jikan_typesense:
+    image: docker.io/typesense/typesense:0.24.1
+    container_name: jikan_typesense
+    hostname: jikan_typesense
+    restart: unless-stopped
+    networks: [ jikan-shared ]
+    entrypoint: /bin/sh
+    environment:
+      JIKAN_TYPESENSE_API_KEY: ${JIKAN_TYPESENSE_API_KEY}
+    command: ["-c", "TYPESENSE_API_KEY=\"$$JIKAN_TYPESENSE_API_KEY\" /opt/typesense-server --data-dir /data"]
+    volumes:
+      - jikan_typesense_data:/data
