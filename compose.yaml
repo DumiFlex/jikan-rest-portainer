@@ -39,8 +39,6 @@ services:
       MICROCACHING: "true"
       MICROCACHING_EXPIRE: 60
       MAX_RESULTS_PER_PAGE: 50
-    volumes:
-      - ./RepositoryQuery.php:/app/app/Support/RepositoryQuery.php:ro
     expose: [ "8080" ]
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -q 'http://127.0.0.1:2114/health?plugin=http'"]
@@ -68,7 +66,6 @@ services:
       JIKAN_DB_PASSWORD: ${JIKAN_DB_PASSWORD}
     volumes:
       - jikan_mongo_data:/data/db
-      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     healthcheck:
       test: ["CMD-SHELL", "mongosh mongodb://localhost:27017 --quiet --eval 'db.runCommand(\"ping\").ok'"]
       interval: 30s
